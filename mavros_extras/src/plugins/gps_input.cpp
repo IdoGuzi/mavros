@@ -54,6 +54,8 @@ public:
       "~/gps_input", 1, std::bind(
         &GpsInputPlugin::send_cb, this,
         _1));
+    
+    this->last_pos_time = rclcpp::Time(0, 0, RCL_ROS_TIME);
   }
 
   Subscriptions get_subscriptions()
