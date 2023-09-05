@@ -92,6 +92,10 @@ set(msg_files
   msg/VehicleInfo.msg
   msg/VfrHud.msg
   msg/Vibration.msg
+  msg/VisionPoseRaw.msg
+  msg/VisionPoseWithCovarianceRaw.msg
+  msg/VisionSpeedRaw.msg
+  msg/VisionSpeedWithCovarianceRaw.msg
   msg/Waypoint.msg
   msg/WaypointList.msg
   msg/WaypointReached.msg

@@ -30,6 +30,8 @@
 #include "geometry_msgs/msg/pose_with_covariance_stamped.hpp"
 #include "geometry_msgs/msg/vector3_stamped.hpp"
 #include "mavros_msgs/msg/landing_target.hpp"
+#include "mavros_msgs/msg/vision_pose_raw.hpp"
+#include "mavros_msgs/msg/vision_pose_with_covariance_raw.hpp"
 
 namespace mavros
 {
@@ -69,9 +71,15 @@ public:
           vision_sub = node->create_subscription<geometry_msgs::msg::PoseStamped>(
             "~/pose", 10, std::bind(
               &VisionPoseEstimatePlugin::vision_cb, this, _1));
+          vision_raw_sub = node->create_subscription<mavros_msgs::msg::VisionPoseRaw>(
+            "~/pose_raw", 10, std::bind(
+              &VisionPoseEstimatePlugin::vision_raw_cb, this, _1));
           vision_cov_sub = node->create_subscription<geometry_msgs::msg::PoseWithCovarianceStamped>(
             "~/pose_cov", 10, std::bind(
               &VisionPoseEstimatePlugin::vision_cov_cb, this, _1));
+          vision_cov_raw_sub = node->create_subscription<mavros_msgs::msg::VisionPoseWithCovarianceRaw>(
+            "~/pose_cov_raw", 10, std::bind(
+              &VisionPoseEstimatePlugin::vision_cov_raw_cb, this, _1));
         }
       });
 
@@ -100,7 +108,9 @@ private:
   friend class TF2ListenerMixin;
 
   rclcpp::Subscription<geometry_msgs::msg::PoseStamped>::SharedPtr vision_sub;
+  rclcpp::Subscription<mavros_msgs::msg::VisionPoseRaw>::SharedPtr vision_raw_sub;
   rclcpp::Subscription<geometry_msgs::msg::PoseWithCovarianceStamped>::SharedPtr vision_cov_sub;
+  rclcpp::Subscription<mavros_msgs::msg::VisionPoseWithCovarianceRaw>::SharedPtr vision_cov_raw_sub;
 
   std::string tf_frame_id;
   std::string tf_child_frame_id;
@@ -157,6 +167,19 @@ private:
     uas->send_message(vp);
   }
 
+  void send_vision_estimate_raw(const mavros_msgs::msg::VisionPoseWithCovarianceRaw::SharedPtr & pose)
+  {
+    mavlink::common::msg::VISION_POSITION_ESTIMATE vp{};
+    rclcpp::Time stamp = pose->pose.header.stamp;
+    vp.usec = stamp.nanoseconds() / 1000;
+    vp.x = pose->pose.position.x; vp.y = pose->pose.position.y; vp.z = pose->pose.position.z;
+    vp.roll = pose->pose.angles.x; vp.pitch = pose->pose.angles.y; vp.yaw = pose->pose.angles.z;
+    vp.covariance = pose->covariance;
+    vp.reset_counter = pose->pose.reset_counter;
+
+    uas->send_message(vp);
+  }
+
   /* -*- callbacks -*- */
 
   /* common TF listener moved to mixin */
@@ -178,11 +201,26 @@ private:
     send_vision_estimate(req->header.stamp, tr, cov);
   }
 
+  void vision_raw_cb(const mavros_msgs::msg::VisionPoseRaw::SharedPtr req)
+  {
+    mavros_msgs::msg::VisionPoseWithCovarianceRaw::SharedPtr pose{};
+    pose->pose.header = req->header;
+    pose->pose.position = req->position;
+    pose->pose.angles = req->angles;
+    pose->pose.reset_counter = req->reset_counter;
+    send_vision_estimate_raw(pose);
+  }
+
   void vision_cov_cb(const geometry_msgs::msg::PoseWithCovarianceStamped::SharedPtr req)
   {
     Eigen::Affine3d tr;
     tf2::fromMsg(req->pose.pose, tr);
     send_vision_estimate(req->header.stamp, tr, req->pose.covariance);
+  }
+
+  void vision_cov_raw_cb(const mavros_msgs::msg::VisionPoseWithCovarianceRaw::SharedPtr req)
+  {
+    send_vision_estimate_raw(req);
   }
 };
 }       // namespace extra_plugins

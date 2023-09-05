@@ -23,6 +23,10 @@
 #include "geometry_msgs/msg/twist_stamped.hpp"
 #include "geometry_msgs/msg/twist_with_covariance_stamped.hpp"
 #include "geometry_msgs/msg/vector3_stamped.hpp"
+#include "mavros_msgs/msg/vision_speed_raw.hpp"
+#include "mavros_msgs/msg/vision_speed_with_covariance_raw.hpp"
+#include <mavros_msgs/msg/detail/vision_speed_raw__struct.hpp>
+#include <mavros_msgs/msg/detail/vision_speed_with_covariance_raw__struct.hpp>
 
 namespace mavros
 {
@@ -46,9 +50,15 @@ public:
     vision_twist_cov_sub =
       node->create_subscription<geometry_msgs::msg::TwistWithCovarianceStamped>(
       "~/speed_twist_cov", 10, std::bind(&VisionSpeedEstimatePlugin::twist_cov_cb, this, _1));
+    vision_twist_cov_raw_sub =
+      node->create_subscription<mavros_msgs::msg::VisionSpeedWithCovarianceRaw>(
+      "~/speed_twist_cov_raw", 10, std::bind(&VisionSpeedEstimatePlugin::twist_cov_raw_cb, this, _1));
     vision_twist_sub = node->create_subscription<geometry_msgs::msg::TwistStamped>(
       "~/speed_twist", 10,
       std::bind(&VisionSpeedEstimatePlugin::twist_cb, this, _1));
+    vision_twist_raw_sub = node->create_subscription<mavros_msgs::msg::VisionSpeedRaw>(
+      "~/speed_twist_raw", 10,
+      std::bind(&VisionSpeedEstimatePlugin::twist_raw_cb, this, _1));
     vision_vector_sub = node->create_subscription<geometry_msgs::msg::Vector3Stamped>(
       "~/speed_vector", 10, std::bind(&VisionSpeedEstimatePlugin::vector_cb, this, _1));
   }
@@ -60,8 +70,9 @@ public:
 
 private:
   rclcpp::Subscription<geometry_msgs::msg::TwistStamped>::SharedPtr vision_twist_sub;
-  rclcpp::Subscription<geometry_msgs::msg::TwistWithCovarianceStamped>::SharedPtr
-    vision_twist_cov_sub;
+  rclcpp::Subscription<mavros_msgs::msg::VisionSpeedRaw>::SharedPtr vision_twist_raw_sub;
+  rclcpp::Subscription<geometry_msgs::msg::TwistWithCovarianceStamped>::SharedPtr vision_twist_cov_sub;
+  rclcpp::Subscription<mavros_msgs::msg::VisionSpeedWithCovarianceRaw>::SharedPtr vision_twist_cov_raw_sub;
   rclcpp::Subscription<geometry_msgs::msg::Vector3Stamped>::SharedPtr vision_vector_sub;
 
   /* -*- low-level send -*- */
@@ -92,6 +103,18 @@ private:
 
     ftf::covariance_to_mavlink(cov, vs.covariance);
 
+    uas->send_message(vs);
+  }
+
+  void send_vision_speed_estimate_raw(const mavros_msgs::msg::VisionSpeedWithCovarianceRaw::SharedPtr & velocity)
+  {
+    mavlink::common::msg::VISION_SPEED_ESTIMATE vs {};
+    vs.usec = get_time_usec(velocity->velocity.header.stamp);
+    vs.x = velocity->velocity.velocity.x;
+    vs.y = velocity->velocity.velocity.y;
+    vs.z = velocity->velocity.velocity.z;
+    vs.covariance = velocity->covariance;
+    vs.reset_counter = velocity->velocity.reset_counter;
     uas->send_message(vs);
   }
 
@@ -127,6 +150,15 @@ private:
     convert_vision_speed(req->header.stamp, ftf::to_eigen(req->twist.linear), cov);
   }
 
+  void twist_raw_cb(const mavros_msgs::msg::VisionSpeedRaw::SharedPtr req)
+  {
+    mavros_msgs::msg::VisionSpeedWithCovarianceRaw::SharedPtr vel{};
+    vel->velocity.header = req->header;
+    vel->velocity.velocity = req->velocity;
+    vel->velocity.reset_counter = req->reset_counter;
+    send_vision_speed_estimate_raw(vel);
+  }
+
   /**
    * @brief Callback to geometry_msgs/TwistWithCovarianceStamped msgs
    *
@@ -143,6 +175,11 @@ private:
     cov3d_map = cov6d_map.block<3, 3>(0, 0);
 
     convert_vision_speed(req->header.stamp, ftf::to_eigen(req->twist.twist.linear), cov3d);
+  }
+
+  void twist_cov_raw_cb(const mavros_msgs::msg::VisionSpeedWithCovarianceRaw::SharedPtr req)
+  {
+    send_vision_speed_estimate_raw(req);
   }
 
   /**
